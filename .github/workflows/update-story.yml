@@ -1,0 +1,83 @@
+name: Update DEADZONE story
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  update-story:
+    if: contains(github.event.head_commit.message, 'Apply cinematic story update') == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Shorten story and add ending scare
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re, json
+          p=Path('index.html')
+          s=p.read_text(encoding='utf-8')
+          lines=[
+            'YEAR 2041','DES MOINES, IOWA','OCTOBER 17',
+            'You are Ethan Cole, a 17-year-old high-school senior.',
+            'At 3:17 AM, you wake up to a silent city.',
+            'No Wi-Fi. No cellular service. No one answers your calls.',
+            'Then your phone lights up: EMERGENCY ALERT.',
+            'DO NOT LEAVE YOUR HOME.',
+            'You look through the curtains. A figure is standing outside.',
+            'Your phone vibrates again: IF YOU HEAR SOMEONE ASKING FOR HELP, DO NOT ANSWER.',
+            'Then you hear a THUD downstairs.',
+            'Your sister Mia is gone. Her room is empty. Her phone is still on the bed.',
+            'A voice message from your mother plays: Ethan... don’t come looking for us.',
+            'Static.',
+            'Then: They’re outside.',
+            'The lights die. Something scratches at the front door.',
+            'A voice whispers: Ethan... I know you’re in there.',
+            'BOOM.',
+            'You escape through the back door.',
+            'The neighborhood is abandoned. Cars are empty. Smoke covers downtown.',
+            'You find a military radio still running.',
+            '...if anyone is still alive... DO NOT GO TO THE HOSPITAL.',
+            'Static.',
+            '...your sister is alive.',
+            'You stare into the darkness.',
+            'THE OBJECTIVE: FIND MIA. REACH THE RADIO TOWER.',
+            'The screen slowly fades to black.',
+            'You hear a flashlight click.',
+            'CLICK.',
+            'The beam turns on.',
+            'The abandoned street stretches ahead.',
+            'But when you see a shadow behind you...',
+            '(ZOMBIE ROARS)',
+            '...you’re not alone.'
+          ]
+          arr=json.dumps(lines,ensure_ascii=False,separators=(',',':'))
+          s,n=re.subn(r'const storyLines=\[.*?\];', 'const storyLines='+arr+';', s, count=1, flags=re.S)
+          if n != 1:
+            raise SystemExit('storyLines block not found')
+          # Add a browser-generated horror stinger so the ending still has sound without audio assets.
+          marker='function finishStory(){'
+          helper='''function playEndingStinger(){\n  try{const C=window.AudioContext||window.webkitAudioContext;if(!C)return;const c=new C(),o=c.createOscillator(),g=c.createGain(),b=c.createBiquadFilter();o.type="sawtooth";o.frequency.setValueAtTime(95,c.currentTime);o.frequency.exponentialRampToValueAtTime(38,c.currentTime+1.5);b.type="lowpass";b.frequency.value=700;g.gain.setValueAtTime(0.0001,c.currentTime);g.gain.exponentialRampToValueAtTime(0.32,c.currentTime+0.08);g.gain.exponentialRampToValueAtTime(0.0001,c.currentTime+1.8);o.connect(b);b.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+1.9);setTimeout(()=>c.close(),2200)}catch(e){}\n}\n'''
+          if 'function playEndingStinger()' not in s:
+            s=s.replace(marker,helper+marker,1)
+          # Play the roar when the ending line appears; keep the existing menu transition.
+          old="const text=storyLines[storyIndex++];cinemaUpdate(text);storyText.textContent=''"
+          new="const text=storyLines[storyIndex++];cinemaUpdate(text);if(text==='(ZOMBIE ROARS)')playEndingStinger();storyText.textContent=''"
+          s=s.replace(old,new,1)
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Commit update
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html
+          git diff --cached --quiet || git commit -m 'Apply cinematic story update'
+          git push
+      - name: Remove one-shot workflow
+        run: |
+          git rm .github/workflows/update-story.yml || true
+          git commit -m 'Remove one-shot story updater' || true
+          git push || true
